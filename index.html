@@ -70,9 +70,9 @@
     <h1>A19 LED Filament Bulb <span class="collapse" id="collapseBtn">[hide]</span></h1>
     <div class="sub">Polycarbonate · 2700K · 4W · 320lm · E26 · 24V · dimmable</div>
     <table>
-      <tr><td>Overall height</td><td>106.1 mm</td></tr>
+      <tr><td>Overall height</td><td>102.0 mm</td></tr>
       <tr><td>Max glass dia.</td><td>⌀58.5 mm</td></tr>
-      <tr><td>Glass height</td><td>80.5 mm</td></tr>
+      <tr><td>Glass height</td><td>77.4 mm</td></tr>
       <tr><td>Neck dia. (plastic)</td><td>⌀27.5 mm</td></tr>
       <tr><td>Filament (w/ contacts)</td><td>38.1 mm</td></tr>
       <tr><td>Filament glow length</td><td>30.2 mm</td></tr>
@@ -115,6 +115,8 @@
   import { Line2 } from 'three/addons/lines/Line2.js';
   import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
   import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+  import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+  import { STLExporter } from 'three/addons/exporters/STLExporter.js';
   import GUI from 'https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.js';
 
   const loadingEl = document.getElementById('loading');
@@ -138,8 +140,8 @@
       orthographic: true,
 
       // Bulb glass
-      glassDiameter: 58.5,         // from SVG section (⌀58.5)
-      glassHeight: 80.5,           // from SVG section
+      glassDiameter: 58.5,         // from SVG section (⌀58.5), matches caliper 58.3
+      glassHeight: 77.4,           // SVG shape, height-scaled so overall = 102 mm (caliper)
       neckDiameter: 27.5,          // plastic collar just above the screw
       showGlass: true,
       glassTint: '#cfe6ff',
@@ -148,37 +150,46 @@
 
       // Filaments
       filamentCount: 4,
-      filamentInclineDeg: 10,      // THE UNKNOWN
-      filamentBow: 4.5,
+      filamentInclineDeg: 8,       // THE UNKNOWN
+      filamentBow: 0,
       filamentGlowLength: 30.2,
-      filamentBaseRadius: 6.5,
-      filamentYBottom: 44,
+      filamentBaseRadius: 10,
+      filamentYBottom: 51,
       filamentThickness: 0.85,
       filamentRotation: 0,
 
       // Technical look
       lineWeight: 1.6,
       surfaceShade: 0.88,          // grey level of shaded surfaces (1=white)
-      showGrid: true,
       showDimensions: false,       // dimension lines + labels
 
       // Light / glow (realistic)
       colorTempK: 2700,
       brightness: 1.0,
-      bloomStrength: 0.95,
+      bloomStrength: 0.2,
       castLight: true,
 
       // Scene
-      autoRotate: false,
+      autoRotate: true,
       rotateSpeed: 0.6,
+
+      // Reference image overlay
+      showReference: false,
+      referenceOpacity: 1,
+      referenceScale: 0.87,
+      referenceOffsetX: 37,
+      referenceOffsetY: 78,
 
       // Actions
       reset: () => applyPreset(),
+      exportOBJ: () => doExport('obj'),
+      exportSTL: () => doExport('stl'),
+      exportSTEP: () => doExport('stp'),
     };
     const DEFAULTS = stripFns(params);
 
     // ---------- Persist settings to browser memory ----------
-    const STORAGE_KEY = 'a19-bulb-settings-v2';
+    const STORAGE_KEY = 'a19-bulb-settings-v4';
     function loadSettings() {
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
@@ -193,14 +204,28 @@
 
     const TECH_BG = new THREE.Color('#f4f6f8');
     const REAL_BG = new THREE.Color('#0a0c10');
-    const BASE_TOP = 25.6;       // base height (tip→glass neck) from SVG section
+    const BASE_TOP = 24.6;       // base height (tip→glass neck), SVG-scaled to overall 102 mm
     const FRUST = 78;
 
     // ---------- Renderer ----------
     const app = document.getElementById('app');
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+
+    // Reference photo layer (behind the transparent canvas) for overlay/fit checking
+    const refImg = document.createElement('img');
+    refImg.src = 'source%20photos/reference%20bulb.jpg';
+    Object.assign(refImg.style, {
+      position: 'absolute', left: '50%', top: '50%', height: '88vh', width: 'auto',
+      transformOrigin: 'center center', pointerEvents: 'none', display: 'none', zIndex: '0',
+    });
+    app.appendChild(refImg);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.top = '0';
+    renderer.domElement.style.left = '0';
+    renderer.domElement.style.zIndex = '1';
     app.appendChild(renderer.domElement);
 
     // Overlay renderer for crisp HTML dimension labels
@@ -210,6 +235,7 @@
     labelRenderer.domElement.style.top = '0';
     labelRenderer.domElement.style.left = '0';
     labelRenderer.domElement.style.pointerEvents = 'none';
+    labelRenderer.domElement.style.zIndex = '2';
     app.appendChild(labelRenderer.domElement);
 
     const scene = new THREE.Scene();
@@ -260,9 +286,6 @@
     const filamentLight = new THREE.PointLight(0xffaa55, 0, 400, 2);
     filamentLight.position.set(0, 60, 0); scene.add(filamentLight);
 
-    const grid = new THREE.GridHelper(600, 30, 0xb6c0cc, 0xd8dee6);
-    grid.material.opacity = 0.6; grid.material.transparent = true;
-    scene.add(grid);
 
     // ---------- Line materials (shared, fat lines) ----------
     const w0 = window.innerWidth, h0 = window.innerHeight;
@@ -344,16 +367,16 @@
       // ruler = 5.4 svg/mm). rn = radius / maxRadius, yn = 1 at top … 0 at neck.
       const profN = [
         [0.000,1.000],[0.086,0.995],[0.158,0.990],[0.219,0.984],[0.269,0.979],
-        [0.322,0.972],[0.377,0.964],[0.427,0.956],[0.481,0.946],[0.540,0.931],
-        [0.617,0.910],[0.678,0.894],[0.740,0.873],[0.799,0.845],[0.834,0.827],
+        [0.322,0.973],[0.377,0.964],[0.427,0.956],[0.481,0.946],[0.540,0.931],
+        [0.617,0.911],[0.678,0.894],[0.740,0.872],[0.799,0.845],[0.834,0.827],
         [0.885,0.795],[0.920,0.771],[0.949,0.742],[0.984,0.687],[1.000,0.647],
         [1.000,0.611],[1.000,0.584],[1.000,0.561],[0.983,0.530],[0.965,0.505],
         [0.945,0.485],[0.910,0.450],[0.869,0.420],[0.837,0.401],[0.807,0.387],
         [0.778,0.371],[0.750,0.355],[0.724,0.342],[0.695,0.325],[0.674,0.309],
         [0.647,0.293],[0.610,0.268],[0.578,0.244],[0.562,0.227],[0.541,0.211],
-        [0.528,0.193],[0.509,0.175],[0.500,0.156],[0.486,0.133],[0.482,0.113],
-        [0.479,0.092],[0.481,0.079],[0.482,0.052],[0.483,0.028],[0.481,0.018],
-        [0.463,0.012],[0.457,0.000],
+        [0.528,0.194],[0.509,0.175],[0.500,0.156],[0.486,0.133],[0.482,0.113],
+        [0.479,0.093],[0.481,0.079],[0.482,0.052],[0.483,0.028],[0.481,0.018],
+        [0.463,0.012],[0.455,0.006],[0.457,0.000],
       ];
       const pts = profN.map(([rn, yn]) => new THREE.Vector2(rn * R, yn * H));
       return new THREE.SplineCurve(pts).getPoints(110);
@@ -426,7 +449,9 @@
       for (let i = 0; bodyBot + 1 + i * 2.4 < bodyTop; i++) {
         const y = bodyBot + 1 + i * 2.4;
         const ring = solid(new THREE.Mesh(new THREE.TorusGeometry(screwR - 0.3, 0.85, 8, 48), brassMat), 50);
-        ring.rotation.x = Math.PI / 2; ring.position.y = y; baseGroup.add(ring);
+        ring.rotation.x = Math.PI / 2; ring.position.y = y;
+        ring.userData.exportSkip = true;   // decorative; omitted from exports to keep STEP light
+        baseGroup.add(ring);
       }
       // Plastic neck collar (the ⌀ neckDiameter feature)
       const collarH = BASE_TOP - bodyTop;
@@ -641,13 +666,181 @@
         if (kind === 'glassFill') o.visible = !tech && params.showGlass;
         if (o.userData && o.userData.isEdges) o.visible = tech;
       });
+      const overlay = params.showReference;
       glassLineGroup.visible = tech && params.showGlass;
-      grid.visible = params.showGrid;
-      scene.background.copy(tech ? TECH_BG : REAL_BG);
+      // Transparent canvas when overlaying the reference photo, opaque otherwise
+      if (overlay) { scene.background = null; renderer.setClearAlpha(0); }
+      else { scene.background = (tech ? TECH_BG : REAL_BG).clone(); renderer.setClearAlpha(1); }
       renderer.toneMapping = tech ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = tech ? 1.0 : 1.1;
       buildDimensions();
       updateBrightness();
+      updateReference();
+    }
+
+    function updateReference() {
+      refImg.style.display = params.showReference ? 'block' : 'none';
+      refImg.style.opacity = params.referenceOpacity;
+      refImg.style.transform =
+        `translate(calc(-50% + ${params.referenceOffsetX}px), calc(-50% + ${params.referenceOffsetY}px)) scale(${params.referenceScale})`;
+    }
+
+    // ============================================================
+    // Export — OBJ / STL (mesh) and STEP (faceted B-rep)
+    // ============================================================
+    // Collect the solid parts (+ a lighter glass lathe) as world-baked geometry,
+    // upright (root spin removed). Thread rings are skipped to keep STEP small.
+    function buildExportGroup() {
+      scene.updateMatrixWorld(true);
+      const savedRot = root.rotation.y;
+      root.rotation.y = 0; root.updateMatrixWorld(true);
+      const group = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial();
+      const lowGlass = new THREE.LatheGeometry(glassProfileSamples(), 48);
+      lowGlass.translate(0, BASE_TOP, 0);
+      root.traverse(o => {
+        if (!o.isMesh || o.userData.exportSkip) return;
+        const kind = o.userData.kind;
+        if (kind !== 'solid' && kind !== 'glassFill') return;
+        let g = (kind === 'glassFill') ? lowGlass.clone()
+              : (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone());
+        g.applyMatrix4(o.matrixWorld);
+        group.add(new THREE.Mesh(g, mat));
+      });
+      root.rotation.y = savedRot; root.updateMatrixWorld(true);
+      return group;
+    }
+
+    function download(name, blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function doExport(fmt) {
+      const group = buildExportGroup();
+      if (fmt === 'obj') {
+        download('a19-bulb.obj', new Blob([new OBJExporter().parse(group)], { type: 'text/plain' }));
+      } else if (fmt === 'stl') {
+        const dv = new STLExporter().parse(group, { binary: true });
+        download('a19-bulb.stl', new Blob([dv], { type: 'application/octet-stream' }));
+      } else if (fmt === 'stp') {
+        const tris = [];
+        group.children.forEach(m => {
+          const p = m.geometry.attributes.position;
+          for (let i = 0; i < p.count; i += 3)
+            tris.push([
+              [p.getX(i), p.getY(i), p.getZ(i)],
+              [p.getX(i + 1), p.getY(i + 1), p.getZ(i + 1)],
+              [p.getX(i + 2), p.getY(i + 2), p.getZ(i + 2)],
+            ]);
+        });
+        download('a19-bulb.stp', new Blob([trianglesToSTEP(tris)], { type: 'application/step' }));
+      }
+    }
+
+    // Faceted STEP (AP214): open shell of planar triangular ADVANCED_FACEs.
+    function trianglesToSTEP(tris) {
+      const fix = (n) => {
+        if (!isFinite(n)) n = 0;
+        let s = n.toFixed(6);
+        if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '');
+        if (s.endsWith('.')) s += '0';
+        if (s === '-0.0') s = '0.0';
+        return s;
+      };
+      const vmap = new Map(), vp = [];
+      const vIndex = (p) => {
+        const k = p[0].toFixed(4) + ',' + p[1].toFixed(4) + ',' + p[2].toFixed(4);
+        let i = vmap.get(k);
+        if (i === undefined) { i = vp.length; vp.push(p); vmap.set(k, i); }
+        return i;
+      };
+      const T = [];
+      for (const t of tris) {
+        const a = vIndex(t[0]), b = vIndex(t[1]), c = vIndex(t[2]);
+        if (a !== b && b !== c && a !== c) T.push([a, b, c]);
+      }
+
+      let id = 0; const L = [];
+      const line = (s) => { const n = ++id; L.push('#' + n + '=' + s + ';'); return n; };
+
+      const cp = vp.map(p => line(`CARTESIAN_POINT('',(${fix(p[0])},${fix(p[1])},${fix(p[2])}))`));
+      const vt = vp.map((p, i) => line(`VERTEX_POINT('',#${cp[i]})`));
+
+      const edgeMap = new Map();
+      const edge = (a, b) => {
+        const lo = Math.min(a, b), hi = Math.max(a, b), k = lo + '_' + hi;
+        let e = edgeMap.get(k);
+        if (!e) {
+          const dx = vp[hi][0] - vp[lo][0], dy = vp[hi][1] - vp[lo][1], dz = vp[hi][2] - vp[lo][2];
+          const len = Math.hypot(dx, dy, dz) || 1;
+          const dir = line(`DIRECTION('',(${fix(dx / len)},${fix(dy / len)},${fix(dz / len)}))`);
+          const vec = line(`VECTOR('',#${dir},${fix(len)})`);
+          const ln = line(`LINE('',#${cp[lo]},#${vec})`);
+          const ec = line(`EDGE_CURVE('',#${vt[lo]},#${vt[hi]},#${ln},.T.)`);
+          e = { ec, lo }; edgeMap.set(k, e);
+        }
+        return e;
+      };
+
+      const faces = [];
+      for (const [a, b, c] of T) {
+        const oe = (s, t2) => {
+          const e = edge(s, t2);
+          return line(`ORIENTED_EDGE('',*,*,#${e.ec},${e.lo === s ? '.T.' : '.F.'})`);
+        };
+        const o1 = oe(a, b), o2 = oe(b, c), o3 = oe(c, a);
+        const loop = line(`EDGE_LOOP('',(#${o1},#${o2},#${o3}))`);
+        const bound = line(`FACE_OUTER_BOUND('',#${loop},.T.)`);
+        const p0 = vp[a], p1 = vp[b], p2 = vp[c];
+        let ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+        const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+        const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+        const nd = line(`DIRECTION('',(${fix(nx)},${fix(ny)},${fix(nz)}))`);
+        const rd = line(`DIRECTION('',(${fix(ux)},${fix(uy)},${fix(uz)}))`);
+        const ax = line(`AXIS2_PLACEMENT_3D('',#${cp[a]},#${nd},#${rd})`);
+        const pl = line(`PLANE('',#${ax})`);
+        faces.push(line(`ADVANCED_FACE('',(#${bound}),#${pl},.T.)`));
+      }
+
+      const shell = line(`OPEN_SHELL('',(${faces.map(f => '#' + f).join(',')}))`);
+      const sbsm = line(`SHELL_BASED_SURFACE_MODEL('',(#${shell}))`);
+      const o0 = line(`CARTESIAN_POINT('',(0.0,0.0,0.0))`);
+      const zd = line(`DIRECTION('',(0.0,0.0,1.0))`);
+      const xd = line(`DIRECTION('',(1.0,0.0,0.0))`);
+      const gax = line(`AXIS2_PLACEMENT_3D('',#${o0},#${zd},#${xd})`);
+      const lenU = line(`( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )`);
+      const angU = line(`( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )`);
+      const slU = line(`( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )`);
+      const unc = line(`UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.001),#${lenU},'distance_accuracy_value','')`);
+      const ctx = line(`( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#${unc})) GLOBAL_UNIT_ASSIGNED_CONTEXT((#${lenU},#${angU},#${slU})) REPRESENTATION_CONTEXT('','') )`);
+      const msr = line(`MANIFOLD_SURFACE_SHAPE_REPRESENTATION('A19',(#${gax},#${sbsm}),#${ctx})`);
+      const appc = line(`APPLICATION_CONTEXT('automotive design')`);
+      line(`APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2010,#${appc})`);
+      const pctx = line(`PRODUCT_CONTEXT('',#${appc},'mechanical')`);
+      const pdctx = line(`PRODUCT_DEFINITION_CONTEXT('part definition',#${appc},'design')`);
+      const prod = line(`PRODUCT('A19','A19 LED filament bulb','',(#${pctx}))`);
+      line(`PRODUCT_RELATED_PRODUCT_CATEGORY('part','',(#${prod}))`);
+      const pdf = line(`PRODUCT_DEFINITION_FORMATION('','',#${prod})`);
+      const pd = line(`PRODUCT_DEFINITION('design','',#${pdf},#${pdctx})`);
+      const pds = line(`PRODUCT_DEFINITION_SHAPE('','',#${pd})`);
+      line(`SHAPE_DEFINITION_REPRESENTATION(#${pds},#${msr})`);
+
+      const header =
+`ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('A19 LED filament bulb'),'2;1');
+FILE_NAME('a19-bulb.stp','2026-01-01T00:00:00',(''),(''),'three.js bulb app','','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));
+ENDSEC;
+DATA;
+`;
+      return header + L.join('\n') + '\nENDSEC;\nEND-ISO-10303-21;\n';
     }
 
     function updateBrightness() {
@@ -692,7 +885,6 @@
       .onChange(v => { edgeMat.linewidth = v; glassLineMat.linewidth = v * 0.72; });
     fRender.add(params, 'surfaceShade', 0.6, 1, 0.01).name('Surface shade')
       .onChange(v => techSolidMat.color.copy(shadeColor(v)));
-    fRender.add(params, 'showGrid').name('Show grid').onChange(applyMode);
     fRender.add(params, 'showDimensions').name('Dimensions').onChange(applyMode);
 
     const fFil = gui.addFolder('Filaments');
@@ -728,7 +920,19 @@
     fScene.add(params, 'rotateSpeed', 0, 3, 0.1).name('Rotate speed');
     fScene.close();
 
+    const fRef = gui.addFolder('Reference Image');
+    fRef.add(params, 'showReference').name('Show photo').onChange(applyMode);
+    fRef.add(params, 'referenceOpacity', 0, 1, 0.01).name('Opacity').onChange(updateReference);
+    fRef.add(params, 'referenceScale', 0.2, 3, 0.01).name('Scale').onChange(updateReference);
+    fRef.add(params, 'referenceOffsetX', -900, 900, 1).name('Offset X').onChange(updateReference);
+    fRef.add(params, 'referenceOffsetY', -900, 900, 1).name('Offset Y').onChange(updateReference);
+
     gui.add(params, 'reset').name('↺ Reset to measured');
+
+    const fExp = gui.addFolder('Export 3D Model');
+    fExp.add(params, 'exportOBJ').name('⤓ OBJ (.obj)');
+    fExp.add(params, 'exportSTL').name('⤓ STL (.stl)');
+    fExp.add(params, 'exportSTEP').name('⤓ STEP (.stp, mesh)');
 
     // Auto-save whenever any control changes
     gui.onChange(saveSettings);
