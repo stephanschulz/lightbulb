@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+<title>A19 LED Filament Bulb — Technical 3D Model</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f8; color: #1c2128; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #info {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    max-width: 330px; padding: 14px 16px;
+    background: rgba(255,255,255,0.86); backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,0.10); border-radius: 10px;
+    font-size: 12px; line-height: 1.5; pointer-events: none;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.10);
+  }
+  #info h1 { font-size: 14px; margin: 0 0 6px; letter-spacing: .2px; }
+  #info .sub { color: #5b6670; font-size: 11px; margin-bottom: 10px; }
+  #info table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  #info td { padding: 1px 0; vertical-align: top; }
+  #info td:last-child { text-align: right; color: #0b62d6; }
+  #info .hint { margin-top: 10px; color: #6b7480; font-size: 10.5px; }
+  #info .collapse { pointer-events: auto; cursor: pointer; color: #0b62d6; }
+  #info.min table, #info.min .hint, #info.min .sub { display: none; }
+
+  #badge {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 10; padding: 8px 16px; border-radius: 8px;
+    background: rgba(255,255,255,0.9); backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,0.10); font-size: 12px;
+    pointer-events: none; box-shadow: 0 6px 24px rgba(0,0,0,0.10);
+    font-variant-numeric: tabular-nums;
+  }
+  #badge b { color: #0b62d6; }
+  #badge .sep { color: #c2c8d0; margin: 0 8px; }
+
+  #loading {
+    position: fixed; inset: 0; z-index: 50; display: flex;
+    align-items: center; justify-content: center; flex-direction: column;
+    gap: 12px; background: #f4f6f8; font-size: 13px; color: #6b7480;
+  }
+  .spinner { width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid rgba(0,0,0,0.12); border-top-color: #0b62d6;
+    animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .err { color: #c0392b; max-width: 460px; text-align: center; line-height: 1.5; }
+  code { background: rgba(0,0,0,0.07); padding: 1px 6px; border-radius: 4px; }
+
+  .dim-label {
+    font-size: 11px; font-weight: 600; color: #0b62d6;
+    background: rgba(255,255,255,0.92); border: 1px solid rgba(11,98,214,0.35);
+    padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+    font-variant-numeric: tabular-nums; pointer-events: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="info">
+    <h1>A19 LED Filament Bulb <span class="collapse" id="collapseBtn">[hide]</span></h1>
+    <div class="sub">Polycarbonate · 2700K · 4W · 320lm · E26 · 24V · dimmable</div>
+    <table>
+      <tr><td>Overall height</td><td>102.0 mm</td></tr>
+      <tr><td>Max glass dia.</td><td>⌀58.3 mm</td></tr>
+      <tr><td>Neck dia. (plastic)</td><td>⌀27.5 mm</td></tr>
+      <tr><td>E26 cap dia.</td><td>⌀26.0 mm</td></tr>
+      <tr><td>Filament (w/ contacts)</td><td>38.1 mm</td></tr>
+      <tr><td>Filament glow length</td><td>30.2 mm</td></tr>
+      <tr><td>Filament count</td><td>4</td></tr>
+    </table>
+    <div class="hint">Drag to orbit · scroll to zoom · right-drag to pan.<br/>
+      Panel (top-right): switch <b>Technical / Realistic</b> and <b>Ortho / Perspective</b>.
+      The <b>filament incline</b> is the unknown spec — tune it to your photos.</div>
+  </div>
+
+  <div id="badge">
+    Incline <b id="angleVal">—</b><span class="sep">·</span><span id="viewVal">—</span>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div id="loadingText">Loading 3D engine…</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+  import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+  import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+  import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+  import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+  import { Line2 } from 'three/addons/lines/Line2.js';
+  import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+  import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+  import GUI from 'https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.js';
+
+  const loadingEl = document.getElementById('loading');
+  const loadingText = document.getElementById('loadingText');
+  try { init(); } catch (e) { showError(e); }
+
+  function showError(e) {
+    console.error(e);
+    loadingEl.innerHTML = `<div class="err"><b>Could not start.</b><br/>${e.message || e}<br/><br/>
+      If opened from disk (file://), browsers block ES-module imports. Run a local server:<br/><br/>
+      <code>python3 -m http.server 8000</code><br/>then open <code>http://localhost:8000</code></div>`;
+  }
+
+  function init() {
+    loadingText.textContent = 'Building bulb…';
+
+    // ---------- Parameters (mm / degrees) ----------
+    const params = {
+      // Render
+      renderMode: 'technical',     // 'technical' | 'realistic'
+      orthographic: true,
+
+      // Bulb glass
+      glassDiameter: 58.3,
+      glassHeight: 74,
+      neckDiameter: 27.5,          // plastic collar just above the screw
+      showGlass: true,
+      glassTint: '#cfe6ff',
+      glassOpacity: 0.10,
+      glassRoughness: 0.04,
+
+      // Filaments
+      filamentCount: 4,
+      filamentInclineDeg: 10,      // THE UNKNOWN
+      filamentBow: 4.5,
+      filamentGlowLength: 30.2,
+      filamentBaseRadius: 6.5,
+      filamentYBottom: 44,
+      filamentThickness: 0.85,
+      filamentRotation: 0,
+
+      // Technical look
+      lineWeight: 1.6,
+      surfaceShade: 0.88,          // grey level of shaded surfaces (1=white)
+      showGrid: true,
+      showDimensions: false,       // dimension lines + labels
+
+      // Light / glow (realistic)
+      colorTempK: 2700,
+      brightness: 1.0,
+      bloomStrength: 0.95,
+      castLight: true,
+
+      // Scene
+      autoRotate: false,
+      rotateSpeed: 0.6,
+
+      // Actions
+      reset: () => applyPreset(),
+    };
+    const DEFAULTS = stripFns(params);
+
+    // ---------- Persist settings to browser memory ----------
+    const STORAGE_KEY = 'a19-bulb-settings-v1';
+    function loadSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        if (saved) for (const k in saved)
+          if (k in params && typeof params[k] !== 'function') params[k] = saved[k];
+      } catch (e) { console.warn('Could not load saved settings:', e); }
+    }
+    function saveSettings() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stripFns(params))); } catch (e) {}
+    }
+    loadSettings();
+
+    const TECH_BG = new THREE.Color('#f4f6f8');
+    const REAL_BG = new THREE.Color('#0a0c10');
+    const BASE_TOP = 26;
+    const FRUST = 78;
+
+    // ---------- Renderer ----------
+    const app = document.getElementById('app');
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    app.appendChild(renderer.domElement);
+
+    // Overlay renderer for crisp HTML dimension labels
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    labelRenderer.domElement.style.position = 'absolute';
+    labelRenderer.domElement.style.top = '0';
+    labelRenderer.domElement.style.left = '0';
+    labelRenderer.domElement.style.pointerEvents = 'none';
+    app.appendChild(labelRenderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = TECH_BG.clone();
+
+    // ---------- Cameras (both) ----------
+    const aspect = window.innerWidth / window.innerHeight;
+    const persp = new THREE.PerspectiveCamera(35, aspect, 1, 5000);
+    persp.position.set(120, 75, 185);
+    const ortho = new THREE.OrthographicCamera(
+      -FRUST * aspect, FRUST * aspect, FRUST, -FRUST, -2000, 5000);
+    ortho.position.set(120, 75, 185);
+
+    let activeCamera = params.orthographic ? ortho : persp;
+    let controls;
+    let savedTarget = new THREE.Vector3(0, 55, 0);
+
+    function makeControls() {
+      if (controls) { savedTarget.copy(controls.target); controls.dispose(); }
+      controls = new OrbitControls(activeCamera, renderer.domElement);
+      controls.enableDamping = true; controls.dampingFactor = 0.08;
+      controls.target.copy(savedTarget);
+      controls.minDistance = 50; controls.maxDistance = 700;
+      controls.update();
+    }
+    makeControls();
+
+    function setProjection(useOrtho) {
+      const old = activeCamera;
+      activeCamera = useOrtho ? ortho : persp;
+      activeCamera.position.copy(old.position);
+      activeCamera.quaternion.copy(old.quaternion);
+      makeControls();
+      renderPass.camera = activeCamera;
+      updateViewBadge();
+    }
+
+    // ---------- Environment & lights ----------
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    const key = new THREE.DirectionalLight(0xffffff, 1.1);
+    key.position.set(80, 150, 120); scene.add(key);
+    const fill = new THREE.DirectionalLight(0xbcd0ff, 0.5);
+    fill.position.set(-120, 60, -90); scene.add(fill);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x9aa3b0, 0.55); scene.add(hemi);
+    const amb = new THREE.AmbientLight(0xffffff, 0.25); scene.add(amb);
+    const filamentLight = new THREE.PointLight(0xffaa55, 0, 400, 2);
+    filamentLight.position.set(0, 60, 0); scene.add(filamentLight);
+
+    const grid = new THREE.GridHelper(600, 30, 0xb6c0cc, 0xd8dee6);
+    grid.material.opacity = 0.6; grid.material.transparent = true;
+    scene.add(grid);
+
+    // ---------- Line materials (shared, fat lines) ----------
+    const w0 = window.innerWidth, h0 = window.innerHeight;
+    const edgeMat = new LineMaterial({ color: 0x10141a, linewidth: params.lineWeight });
+    const glassLineMat = new LineMaterial({ color: 0x4a5360, linewidth: params.lineWeight * 0.72 });
+    const DIM_COLOR = 0x0b62d6;
+    const dimMat = new LineMaterial({ color: DIM_COLOR, linewidth: 1.3 });
+    const lineMats = [edgeMat, glassLineMat, dimMat];
+    lineMats.forEach(m => { m.resolution.set(w0, h0); m.worldUnits = false; });
+    const dimArrowMat = new THREE.MeshBasicMaterial({ color: DIM_COLOR });
+
+    // ---------- Realistic materials ----------
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(params.glassTint), metalness: 0, roughness: params.glassRoughness,
+      transmission: 1.0, thickness: 1.5, ior: 1.52, transparent: true,
+      opacity: params.glassOpacity, side: THREE.DoubleSide, depthWrite: false,
+      clearcoat: 0.3, clearcoatRoughness: 0.1, envMapIntensity: 1.4,
+    });
+    const brassMat = new THREE.MeshStandardMaterial({ color: 0xb9b39a, metalness: 1, roughness: 0.35 });
+    const nickelMat = new THREE.MeshStandardMaterial({ color: 0xc9ccce, metalness: 1, roughness: 0.28 });
+    const insulatorMat = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, metalness: 0, roughness: 0.7 });
+    const wireMat = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, metalness: 1, roughness: 0.4 });
+    const stemMat = new THREE.MeshPhysicalMaterial({
+      color: 0xeaf2ff, metalness: 0, roughness: 0.1, transmission: 1.0, thickness: 1.0,
+      ior: 1.5, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false,
+    });
+    const filamentMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1207, emissive: 0xffaa55, emissiveIntensity: 3, roughness: 0.6, metalness: 0,
+    });
+
+    // ---------- Technical material (shaded surfaces) ----------
+    const techSolidMat = new THREE.MeshStandardMaterial({
+      color: shadeColor(params.surfaceShade), roughness: 0.95, metalness: 0,
+      polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      flatShading: false, side: THREE.DoubleSide,
+    });
+    function shadeColor(v) { return new THREE.Color(v * 0.92, v * 0.95, v); }
+
+    // ============================================================
+    // Geometry
+    // ============================================================
+    const root = new THREE.Group();
+    scene.add(root);
+    const glassGroup = new THREE.Group();
+    const baseGroup = new THREE.Group();
+    const filamentGroup = new THREE.Group();
+    root.add(glassGroup, baseGroup, filamentGroup);
+
+    const dimGroup = new THREE.Group();
+    root.add(dimGroup);
+    const dimLabels = [];
+
+    let glassMesh = null;
+    const glassLineGroup = new THREE.Group();
+    glassGroup.add(glassLineGroup);
+    const glowMeshes = [];
+
+    // Add black feature edges as a child of a mesh
+    function addEdges(mesh, threshold = 35) {
+      const eg = new THREE.EdgesGeometry(mesh.geometry, threshold);
+      const lsg = new LineSegmentsGeometry().fromEdgesGeometry(eg);
+      const seg = new LineSegments2(lsg, edgeMat);
+      seg.userData.isEdges = true;
+      seg.frustumCulled = false;
+      mesh.add(seg);
+    }
+    // Register a solid part: grey shaded fill + black edges
+    function solid(mesh, threshold = 35) {
+      mesh.userData.kind = 'solid';
+      mesh.userData.realMat = mesh.material;
+      addEdges(mesh, threshold);
+      return mesh;
+    }
+
+    // ---- A19 silhouette samples (Vector2 r,y), y from base shoulder ----
+    function glassProfileSamples() {
+      const R = params.glassDiameter / 2, H = params.glassHeight;
+      // Traditional pear (A-shape) silhouette: full rounded crown, widest in the
+      // upper third, then a concave shoulder tapering down to a narrow neck.
+      const profN = [
+        [0.00,1.000],[0.20,0.992],[0.40,0.968],[0.58,0.930],[0.74,0.878],
+        [0.88,0.812],[0.965,0.730],[1.000,0.635],[0.990,0.548],[0.945,0.452],
+        [0.860,0.360],[0.730,0.272],[0.585,0.192],[0.460,0.118],[0.385,0.052],
+        [0.380,0.000],
+      ];
+      const pts = profN.map(([rn, yn]) => new THREE.Vector2(rn * R, yn * H));
+      return new THREE.SplineCurve(pts).getPoints(110);
+    }
+
+    function buildGlass() {
+      glassGroup.clear();
+      glassGroup.add(glassLineGroup);
+      glassLineGroup.clear();
+      glassMesh = null;
+      if (!params.showGlass) return;
+
+      const samples = glassProfileSamples();
+
+      // Realistic lathe
+      const geo = new THREE.LatheGeometry(samples, 96);
+      geo.translate(0, BASE_TOP, 0);
+      glassMesh = new THREE.Mesh(geo, glassMat);
+      glassMesh.userData.kind = 'glassFill';
+      glassMesh.renderOrder = 2;
+      glassGroup.add(glassMesh);
+
+      // Technical wireframe-of-revolution (meridians + rings)
+      const MERIDIANS = 8, RINGS = 9;
+      for (let m = 0; m < MERIDIANS; m++) {
+        const a = (m / MERIDIANS) * Math.PI * 2;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const flat = [];
+        for (const s of samples) flat.push(s.x * ca, s.y + BASE_TOP, s.x * sa);
+        const lg = new LineGeometry(); lg.setPositions(flat);
+        glassLineGroup.add(new Line2(lg, glassLineMat));
+      }
+      for (let r = 1; r <= RINGS; r++) {
+        const idx = Math.round((r / (RINGS + 1)) * (samples.length - 1));
+        const s = samples[idx]; if (s.x < 0.4) continue;
+        const flat = [];
+        const SEG = 64;
+        for (let i = 0; i <= SEG; i++) {
+          const a = (i / SEG) * Math.PI * 2;
+          flat.push(s.x * Math.cos(a), s.y + BASE_TOP, s.x * Math.sin(a));
+        }
+        const lg = new LineGeometry(); lg.setPositions(flat);
+        glassLineGroup.add(new Line2(lg, glassLineMat));
+      }
+    }
+
+    // The metal screw is a true E26 (~26 mm). The wider plastic collar just above it
+    // is the "neck" — its diameter is the params.neckDiameter feature.
+    const SCREW_TOP = 17;            // y at top of the metal screw
+    function buildBase() {
+      baseGroup.clear();
+      const screwR = 26 / 2;         // E26 ≈ 26 mm
+      const neckR = params.neckDiameter / 2;
+
+      // Screw shell + thread ridges
+      const shell = solid(new THREE.Mesh(
+        new THREE.CylinderGeometry(screwR, screwR * 0.9, 16, 48, 1, true), brassMat));
+      shell.position.y = SCREW_TOP - 8; baseGroup.add(shell);
+      for (let i = 0; i < 6; i++) {
+        const y = 3 + i * 2.4;
+        const r = screwR * (0.9 + 0.1 * (y / 16));
+        const ring = solid(new THREE.Mesh(new THREE.TorusGeometry(r - 0.4, 0.85, 8, 48), brassMat), 50);
+        ring.rotation.x = Math.PI / 2; ring.position.y = y; baseGroup.add(ring);
+      }
+      // Insulator + contact tip at the very bottom
+      const ins = solid(new THREE.Mesh(new THREE.CylinderGeometry(screwR * 0.78, screwR * 0.55, 4, 32), insulatorMat));
+      ins.position.y = 1.2; baseGroup.add(ins);
+      const tip = solid(new THREE.Mesh(new THREE.CylinderGeometry(3.8, 5, 2.4, 24), nickelMat));
+      tip.position.y = -0.7; baseGroup.add(tip);
+
+      // Plastic neck collar (the ⌀ neckDiameter feature) between screw and glass
+      const collarH = BASE_TOP - SCREW_TOP;
+      const neck = solid(new THREE.Mesh(
+        new THREE.CylinderGeometry(neckR, screwR, collarH, 48), insulatorMat));
+      neck.position.y = SCREW_TOP + collarH / 2; baseGroup.add(neck);
+    }
+
+    function buildFilaments() {
+      filamentGroup.clear();
+      glowMeshes.length = 0;
+
+      const n = Math.max(1, Math.round(params.filamentCount));
+      const yB = params.filamentYBottom;
+      const incline = THREE.MathUtils.degToRad(params.filamentInclineDeg);
+      const len = params.filamentGlowLength;
+      const yT = yB + len * Math.cos(incline);
+      const rBottom = params.filamentBaseRadius;
+      const rTop = Math.max(0.5, rBottom - len * Math.sin(incline));
+      const twist = THREE.MathUtils.degToRad(params.filamentRotation); // top-only twist
+
+      // Support-pin junctions: the stem finishes exactly at the top pins.
+      const ySupTop = yT + 2;
+      const ySupBot = yB - 1;
+      // Upper stem: thin rod from the bottom pins up to the top pins.
+      filamentGroup.add(solid(makeTube(
+        new THREE.Vector3(0, ySupBot, 0), new THREE.Vector3(0, ySupTop, 0), 1.3, stemMat)));
+      // Lower stem: bulgy glass press at the base, tapering to thin at the bottom pins.
+      const yStem0 = BASE_TOP - 2;
+      const stemSpan = Math.max(4, ySupBot - yStem0);
+      const stemProf = [
+        [2.6, 0.00], [4.0, 0.16], [3.4, 0.34], [2.2, 0.56], [1.5, 0.80], [1.3, 1.00],
+      ].map(([r, t]) => new THREE.Vector2(r, yStem0 + t * stemSpan));
+      const stemPts = new THREE.SplineCurve(stemProf).getPoints(40);
+      filamentGroup.add(solid(new THREE.Mesh(new THREE.LatheGeometry(stemPts, 32), stemMat), 60));
+
+      filamentMat.emissive.copy(kelvinToColor(params.colorTempK));
+
+      const dirAt = (a) => new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      for (let i = 0; i < n; i++) {
+        const baseAng = (i / n) * Math.PI * 2;      // bottom anchor — fixed
+        const topAng = baseAng + twist;             // top anchor — twisted
+        const midAng = baseAng + twist * 0.5;       // smooth helix through the middle
+        const pBottom = dirAt(baseAng).multiplyScalar(rBottom).setY(yB);
+        const pTop = dirAt(topAng).multiplyScalar(rTop).setY(yT);
+        const midR = (rBottom + rTop) / 2 + params.filamentBow;
+        const pMid = dirAt(midAng).multiplyScalar(midR).setY((yB + yT) / 2);
+
+        const curve = new THREE.CatmullRomCurve3([pBottom, pMid, pTop]);
+        const geo = new THREE.TubeGeometry(curve, 40, params.filamentThickness, 6, false);
+        const mesh = solid(new THREE.Mesh(geo, filamentMat), 45);
+        mesh.renderOrder = 1; filamentGroup.add(mesh); glowMeshes.push(mesh);
+
+        for (const p of [pBottom, pTop]) {
+          const cap = solid(new THREE.Mesh(new THREE.SphereGeometry(params.filamentThickness, 10, 8), filamentMat), 60);
+          cap.position.copy(p); filamentGroup.add(cap); glowMeshes.push(cap);
+        }
+        const stemTop = new THREE.Vector3(0, yT + 2, 0);
+        const stemBot = new THREE.Vector3(0, yB - 1, 0);
+        filamentGroup.add(solid(makeTube(stemTop, pTop, 0.4, wireMat), 60));
+        filamentGroup.add(solid(makeTube(stemBot, pBottom, 0.4, wireMat), 60));
+      }
+      const topBead = solid(new THREE.Mesh(new THREE.SphereGeometry(1.8, 16, 12), wireMat), 60);
+      topBead.position.y = yT + 2; filamentGroup.add(topBead);
+
+      filamentLight.position.set(0, (yB + yT) / 2, 0);
+    }
+
+    function makeTube(p1, p2, radius, mat, radialSeg = 6) {
+      const dir = new THREE.Vector3().subVectors(p2, p1);
+      const len = dir.length();
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, radialSeg), mat);
+      mesh.position.copy(p1).addScaledVector(dir, 0.5);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+      return mesh;
+    }
+
+    function kelvinToColor(k) {
+      const t = k / 100; let r, g, b;
+      r = t <= 66 ? 255 : 329.7 * Math.pow(t - 60, -0.1332);
+      g = t <= 66 ? 99.47 * Math.log(t) - 161.12 : 288.12 * Math.pow(t - 60, -0.0755);
+      b = t >= 66 ? 255 : (t <= 19 ? 0 : 138.52 * Math.log(t - 10) - 305.04);
+      const cl = x => Math.min(255, Math.max(0, x)) / 255;
+      return new THREE.Color(cl(r), cl(g), cl(b));
+    }
+
+    // ============================================================
+    // Dimension lines + labels
+    // ============================================================
+    const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
+    function dimSeg(a, b) {
+      const g = new LineGeometry(); g.setPositions([a.x, a.y, a.z, b.x, b.y, b.z]);
+      const l = new Line2(g, dimMat); l.frustumCulled = false; dimGroup.add(l);
+    }
+    function dimArrow(tip, dir) {
+      const h = 2.8, r = 1.0, d = dir.clone().normalize();
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), dimArrowMat);
+      cone.quaternion.setFromUnitVectors(V(0, 1, 0), d);
+      cone.position.copy(tip).addScaledVector(d, -h / 2);
+      cone.frustumCulled = false; dimGroup.add(cone);
+    }
+    function dimArc(center, a0, a1, radius) {
+      const flat = [], SEG = 40;
+      for (let i = 0; i <= SEG; i++) {
+        const a = a0 + (a1 - a0) * (i / SEG);
+        flat.push(center.x + radius * Math.cos(a), center.y + radius * Math.sin(a), center.z);
+      }
+      const g = new LineGeometry(); g.setPositions(flat);
+      const l = new Line2(g, dimMat); l.frustumCulled = false; dimGroup.add(l);
+    }
+    function dimLabel(text, pos) {
+      const div = document.createElement('div');
+      div.className = 'dim-label'; div.textContent = text;
+      const o = new CSS2DObject(div); o.position.copy(pos);
+      dimGroup.add(o); dimLabels.push(o);
+    }
+    // Vertical linear dimension at x=xLine, between two feature points on the axis.
+    function vDimension(xLine, fxA, yA, fxB, yB, text, past) {
+      dimSeg(V(fxA, yA), V(xLine + past, yA));   // extension A
+      dimSeg(V(fxB, yB), V(xLine + past, yB));   // extension B
+      dimSeg(V(xLine, yA), V(xLine, yB));        // dimension line
+      dimArrow(V(xLine, yA), V(0, Math.sign(yA - yB), 0));
+      dimArrow(V(xLine, yB), V(0, Math.sign(yB - yA), 0));
+      dimLabel(text, V(xLine, (yA + yB) / 2));
+    }
+    // Aligned dimension parallel to the segment pA→pB, offset along `perp`.
+    function alignedDimension(pA, pB, perp, off, text) {
+      const oA = pA.clone().addScaledVector(perp, off);
+      const oB = pB.clone().addScaledVector(perp, off);
+      dimSeg(pA, pA.clone().addScaledVector(perp, off + 2));   // extension A
+      dimSeg(pB, pB.clone().addScaledVector(perp, off + 2));   // extension B
+      dimSeg(oA, oB);                                          // dimension line
+      const dir = oB.clone().sub(oA).normalize();
+      dimArrow(oA, dir.clone().negate());
+      dimArrow(oB, dir);
+      dimLabel(text, oA.clone().lerp(oB, 0.5).addScaledVector(perp, 3.5));
+    }
+    // Horizontal linear dimension at y=yLine, between ±xExt feature points.
+    function hDimension(yLine, xExt, yFeat, text, past) {
+      dimSeg(V(-xExt, yFeat), V(-xExt, yLine + past));
+      dimSeg(V(xExt, yFeat), V(xExt, yLine + past));
+      dimSeg(V(-xExt, yLine), V(xExt, yLine));
+      dimArrow(V(-xExt, yLine), V(-1, 0, 0));
+      dimArrow(V(xExt, yLine), V(1, 0, 0));
+      dimLabel(text, V(0, yLine));
+    }
+
+    function buildDimensions() {
+      for (const o of dimLabels) if (o.element) o.element.remove();
+      dimLabels.length = 0;
+      dimGroup.clear();
+      if (!params.showDimensions) { dimGroup.visible = false; return; }
+      dimGroup.visible = true;
+
+      const R = params.glassDiameter / 2;
+      const glassTopY = BASE_TOP + params.glassHeight;
+      const bulgeY = BASE_TOP + 0.635 * params.glassHeight;
+      const neckR = params.neckDiameter / 2;
+      const yTip = -1.85;
+
+      const incl = THREE.MathUtils.degToRad(params.filamentInclineDeg);
+      const len = params.filamentGlowLength;
+      const yB = params.filamentYBottom;
+      const yT = yB + len * Math.cos(incl);
+      const rBottom = params.filamentBaseRadius;
+      const rTop = Math.max(0.5, rBottom - len * Math.sin(incl));
+      const ySupTop = yT + 2;   // top of glass stem (filament support pins)
+
+      // ---- Envelope ----
+      // Overall height (left)
+      vDimension(-(R + 26), -1, glassTopY, -1, yTip,
+        `${(glassTopY - yTip).toFixed(1)} mm`, -3);
+      // Max glass diameter (top)
+      hDimension(glassTopY + 20, R, bulgeY, `⌀${params.glassDiameter.toFixed(1)} mm`, 3);
+      // Neck diameter — plastic collar just above the screw (bottom)
+      hDimension(yTip - 8, neckR, BASE_TOP - 2, `⌀${params.neckDiameter.toFixed(1)} mm`, -3);
+
+      // ---- Vertical gaps (right, referenced to the central axis) ----
+      const xCh = (rBottom + rTop) / 2 + params.filamentBow + 9;
+      // bottom of stem / top of metal screw  →  bottom of filament
+      vDimension(xCh, 0, BASE_TOP, 0, yB, `${(yB - BASE_TOP).toFixed(1)} mm`, 3);
+      // top of stem  →  top of bulb
+      vDimension(xCh, 0, ySupTop, 0, glassTopY, `${(glassTopY - ySupTop).toFixed(1)} mm`, 3);
+
+      // ---- Filament length (aligned ALONG the inclined filament) ----
+      const pA = V(rBottom, yB, 0), pB = V(rTop, yT, 0);
+      const fd = pB.clone().sub(pA).normalize();
+      const fperp = V(fd.y, -fd.x, 0).normalize();   // perpendicular, pointing outward (+x)
+      alignedDimension(pA, pB, fperp, 6, `${len.toFixed(1)} mm`);
+
+      // ---- Filament incline angle (on the left filament, at its base) ----
+      const P0 = V(-rBottom, yB, 0);
+      const aVert = Math.PI / 2;            // straight up = 0° reference
+      const aChord = Math.PI / 2 - incl;    // along the filament chord
+      const rArc = 9;
+      dimSeg(P0, V(P0.x, P0.y + rArc + 5, 0));   // vertical reference leg
+      dimSeg(P0, V(-rTop, yT, 0));                // filament-chord leg
+      dimArc(P0, Math.min(aVert, aChord), Math.max(aVert, aChord), rArc);
+      const aMid = (aVert + aChord) / 2;
+      dimLabel(`${params.filamentInclineDeg.toFixed(1)}°`,
+        V(P0.x + (rArc + 7) * Math.cos(aMid), P0.y + (rArc + 7) * Math.sin(aMid), 0));
+    }
+
+    // ============================================================
+    // Mode switching (technical vs realistic)
+    // ============================================================
+    function applyMode() {
+      const tech = params.renderMode === 'technical';
+      root.traverse(o => {
+        const kind = o.userData && o.userData.kind;
+        if (kind === 'solid') o.material = tech ? techSolidMat : o.userData.realMat;
+        if (kind === 'glassFill') o.visible = !tech && params.showGlass;
+        if (o.userData && o.userData.isEdges) o.visible = tech;
+      });
+      glassLineGroup.visible = tech && params.showGlass;
+      grid.visible = params.showGrid;
+      scene.background.copy(tech ? TECH_BG : REAL_BG);
+      renderer.toneMapping = tech ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = tech ? 1.0 : 1.1;
+      buildDimensions();
+      updateBrightness();
+    }
+
+    function updateBrightness() {
+      const tech = params.renderMode === 'technical';
+      const intensity = 0.6 + params.brightness * 5.5;
+      const col = kelvinToColor(params.colorTempK);
+      filamentMat.emissive.copy(col);
+      for (const m of glowMeshes) m.material.emissiveIntensity = intensity;
+      filamentLight.color.copy(col);
+      filamentLight.intensity = (!tech && params.castLight) ? params.brightness * 220 : 0;
+      bloomPass.strength = tech ? 0 : params.bloomStrength * (0.4 + params.brightness * 0.9);
+    }
+
+    // ============================================================
+    // Post-processing
+    // ============================================================
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, activeCamera);
+    composer.addPass(renderPass);
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight), 0.95, 0.5, 0.6);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+
+    // ============================================================
+    // Build
+    // ============================================================
+    buildBase(); buildGlass(); buildFilaments();
+    applyMode();
+
+    // ============================================================
+    // GUI
+    // ============================================================
+    const gui = new GUI({ title: 'Bulb Controls' });
+
+    const fRender = gui.addFolder('View');
+    fRender.add(params, 'renderMode', { 'Technical (CAD)': 'technical', 'Realistic': 'realistic' })
+      .name('Render mode').onChange(applyMode);
+    fRender.add(params, 'orthographic').name('Orthographic')
+      .onChange(setProjection);
+    fRender.add(params, 'lineWeight', 0.5, 4, 0.1).name('Line weight')
+      .onChange(v => { edgeMat.linewidth = v; glassLineMat.linewidth = v * 0.72; });
+    fRender.add(params, 'surfaceShade', 0.6, 1, 0.01).name('Surface shade')
+      .onChange(v => techSolidMat.color.copy(shadeColor(v)));
+    fRender.add(params, 'showGrid').name('Show grid').onChange(applyMode);
+    fRender.add(params, 'showDimensions').name('Dimensions').onChange(applyMode);
+
+    const fFil = gui.addFolder('Filaments');
+    fFil.add(params, 'filamentCount', 1, 8, 1).name('Count').onChange(rebuildFilaments);
+    fFil.add(params, 'filamentInclineDeg', -30, 45, 0.5).name('Incline angle °')
+      .onChange(() => { rebuildFilaments(); updateAngleBadge(); }).listen();
+    fFil.add(params, 'filamentBow', 0, 15, 0.1).name('Bow (mm)').onChange(rebuildFilaments);
+    fFil.add(params, 'filamentGlowLength', 10, 50, 0.1).name('Glow length').onChange(rebuildFilaments);
+    fFil.add(params, 'filamentBaseRadius', 1, 20, 0.1).name('Base radius').onChange(rebuildFilaments);
+    fFil.add(params, 'filamentYBottom', BASE_TOP, 80, 0.5).name('Bottom height').onChange(rebuildFilaments);
+    fFil.add(params, 'filamentThickness', 0.3, 2.5, 0.05).name('Thickness').onChange(rebuildFilaments);
+    fFil.add(params, 'filamentRotation', -180, 180, 1).name('Top twist °').onChange(rebuildFilaments);
+
+    const fGlass = gui.addFolder('Glass Envelope');
+    fGlass.add(params, 'showGlass').name('Show glass').onChange(() => { buildGlass(); applyMode(); });
+    fGlass.add(params, 'glassDiameter', 40, 80, 0.1).name('Diameter').onChange(() => { buildGlass(); applyMode(); });
+    fGlass.add(params, 'glassHeight', 50, 100, 0.5).name('Height').onChange(() => { buildGlass(); applyMode(); });
+    fGlass.add(params, 'neckDiameter', 18, 40, 0.1).name('Neck dia.').onChange(() => { buildBase(); applyMode(); });
+    fGlass.add(params, 'glassOpacity', 0, 0.5, 0.01).name('Opacity (real)').onChange(v => glassMat.opacity = v);
+    fGlass.add(params, 'glassRoughness', 0, 0.3, 0.005).name('Roughness (real)').onChange(v => glassMat.roughness = v);
+    fGlass.addColor(params, 'glassTint').name('Tint (real)').onChange(v => glassMat.color.set(v));
+    fGlass.close();
+
+    const fLight = gui.addFolder('Light & Glow (realistic)');
+    fLight.add(params, 'colorTempK', 2000, 6500, 50).name('Color temp K').onChange(updateBrightness);
+    fLight.add(params, 'brightness', 0, 1, 0.01).name('Dimmer').onChange(updateBrightness);
+    fLight.add(params, 'bloomStrength', 0, 3, 0.05).name('Bloom').onChange(updateBrightness);
+    fLight.add(params, 'castLight').name('Cast light').onChange(updateBrightness);
+    fLight.close();
+
+    const fScene = gui.addFolder('Scene');
+    fScene.add(params, 'autoRotate').name('Auto-rotate');
+    fScene.add(params, 'rotateSpeed', 0, 3, 0.1).name('Rotate speed');
+    fScene.close();
+
+    gui.add(params, 'reset').name('↺ Reset to measured');
+
+    // Auto-save whenever any control changes
+    gui.onChange(saveSettings);
+
+    function rebuildFilaments() { buildFilaments(); applyMode(); }
+
+    function applyPreset() {
+      Object.assign(params, DEFAULTS);
+      buildBase(); buildGlass(); buildFilaments(); applyMode();
+      glassMat.opacity = params.glassOpacity; glassMat.roughness = params.glassRoughness;
+      glassMat.color.set(params.glassTint);
+      edgeMat.linewidth = params.lineWeight; glassLineMat.linewidth = params.lineWeight * 0.72;
+      techSolidMat.color.copy(shadeColor(params.surfaceShade));
+      setProjection(params.orthographic);
+      updateAngleBadge();
+      gui.controllersRecursive().forEach(c => c.updateDisplay());
+      saveSettings();
+    }
+
+    // ---------- Badges ----------
+    const angleVal = document.getElementById('angleVal');
+    const viewVal = document.getElementById('viewVal');
+    function updateAngleBadge() { angleVal.textContent = `${params.filamentInclineDeg.toFixed(1)}°`; }
+    function updateViewBadge() {
+      viewVal.textContent = `${params.renderMode === 'technical' ? 'Technical' : 'Realistic'} · ${params.orthographic ? 'Ortho' : 'Perspective'}`;
+    }
+    updateAngleBadge();
+    // refresh view badge when render mode changes too
+    fRender.controllers[0].onChange(() => { applyMode(); updateViewBadge(); });
+    updateViewBadge();
+
+    const info = document.getElementById('info');
+    document.getElementById('collapseBtn').addEventListener('click', () => {
+      info.classList.toggle('min');
+      document.getElementById('collapseBtn').textContent = info.classList.contains('min') ? '[show]' : '[hide]';
+    });
+
+    // ---------- Resize ----------
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth, h = window.innerHeight, a = w / h;
+      persp.aspect = a; persp.updateProjectionMatrix();
+      ortho.left = -FRUST * a; ortho.right = FRUST * a; ortho.top = FRUST; ortho.bottom = -FRUST;
+      ortho.updateProjectionMatrix();
+      renderer.setSize(w, h); composer.setSize(w, h);
+      labelRenderer.setSize(w, h);
+      lineMats.forEach(m => m.resolution.set(w, h));
+    });
+
+    // ---------- Animate ----------
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      if (params.autoRotate) root.rotation.y += dt * params.rotateSpeed * 0.5;
+      controls.update();
+      if (params.renderMode === 'technical') renderer.render(scene, activeCamera);
+      else { renderPass.camera = activeCamera; composer.render(); }
+      labelRenderer.render(scene, activeCamera);
+    }
+    animate();
+    loadingEl.style.display = 'none';
+  }
+
+  function stripFns(o) {
+    const out = {};
+    for (const k in o) if (typeof o[k] !== 'function') out[k] = o[k];
+    return JSON.parse(JSON.stringify(out));
+  }
+  </script>
+</body>
+</html>
