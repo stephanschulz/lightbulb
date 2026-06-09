@@ -80,7 +80,8 @@
     </table>
     <div class="hint">Drag to orbit · scroll to zoom · right-drag to pan.<br/>
       Panel (top-right): switch <b>Technical / Realistic</b> and <b>Ortho / Perspective</b>.
-      The <b>filament incline</b> is the unknown spec — tune it to your photos.</div>
+      The <b>filament incline</b> is the unknown spec — tune it to your photos.<br/><br/>
+      Note: This project was developed with AI assistance.</div>
   </div>
 
   <div id="badge">
@@ -161,7 +162,7 @@
       // Technical look
       lineWeight: 1.6,
       surfaceShade: 0.88,          // grey level of shaded surfaces (1=white)
-      showDimensions: false,       // dimension lines + labels
+      showDimensions: true,        // dimension lines + labels
 
       // Light / glow (realistic)
       colorTempK: 2700,
@@ -174,7 +175,7 @@
       rotateSpeed: 0.6,
 
       // Reference image overlay
-      showReference: false,
+      showReference: true,
       referenceOpacity: 1,
       referenceScale: 0.87,
       referenceOffsetX: 37,
@@ -189,7 +190,7 @@
     const DEFAULTS = stripFns(params);
 
     // ---------- Persist settings to browser memory ----------
-    const STORAGE_KEY = 'a19-bulb-settings-v4';
+    const STORAGE_KEY = 'a19-bulb-settings-v5';
     function loadSettings() {
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
@@ -933,6 +934,9 @@ DATA;
     fExp.add(params, 'exportOBJ').name('⤓ OBJ (.obj)');
     fExp.add(params, 'exportSTL').name('⤓ STL (.stl)');
     fExp.add(params, 'exportSTEP').name('⤓ STEP (.stp, mesh)');
+
+    gui.add({ github: () => window.open('https://github.com/stephanschulz/lightbulb', '_blank') },
+      'github').name('⧉ GitHub: stephanschulz/lightbulb');
 
     // Auto-save whenever any control changes
     gui.onChange(saveSettings);

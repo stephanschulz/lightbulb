@@ -3,6 +3,10 @@
 An adjustable, explorable 3D rendering of the polycarbonate A19 LED filament bulb
 (2700K · 4W · 320lm · E26 · 24V · clear · dimmable, 4×38mm filaments).
 
+**[View Live Demo on GitHub Pages](https://stephanschulz.github.io/lightbulb/)**
+
+**Note: This project was developed with AI assistance.**
+
 Built from the caliper measurements in `source photos/`.
 
 ## Run it
@@ -62,3 +66,9 @@ buffer); realistic mode uses `MeshPhysicalMaterial` transmission + `UnrealBloom`
 - `index.html` — the entire self-contained app (Three.js + post-processing bloom).
 - `source photos/` — caliper measurement photos.
 - `tasks/todo.md` — build plan & notes.
+
+## Links & credits
+- Live demo: <https://stephanschulz.github.io/lightbulb/>
+- Repository: <https://github.com/stephanschulz/lightbulb>
+
+**Note: This project was developed with AI assistance.**
