@@ -7,6 +7,10 @@ An adjustable, explorable 3D rendering of the polycarbonate A19 LED filament bul
 
 **Note: This project was developed with AI assistance.**
 
+| Technical (CAD) | Realistic |
+|:---:|:---:|
+| ![Technical CAD view](screenshots/technical.jpg) | ![Realistic view](screenshots/realistic.jpg) |
+
 Built from the caliper measurements in `source photos/`.
 
 ## Run it
