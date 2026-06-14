@@ -155,7 +155,7 @@
       filamentBow: 0,
       filamentGlowLength: 30.2,
       filamentBaseRadius: 10,
-      filamentYBottom: 51,
+      filamentYBottom: 47.5,       // start-of-stem → filament bottom = 22.9 mm (supplier)
       filamentThickness: 0.85,
       filamentRotation: 0,
 
@@ -171,7 +171,7 @@
       castLight: true,
 
       // Scene
-      autoRotate: true,
+      autoRotate: false,
       rotateSpeed: 0.6,
 
       // Reference image overlay
@@ -190,7 +190,7 @@
     const DEFAULTS = stripFns(params);
 
     // ---------- Persist settings to browser memory ----------
-    const STORAGE_KEY = 'a19-bulb-settings-v5';
+    const STORAGE_KEY = 'a19-bulb-settings-v8';
     function loadSettings() {
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
@@ -619,7 +619,6 @@
       const yT = yB + len * Math.cos(incl);
       const rBottom = params.filamentBaseRadius;
       const rTop = Math.max(0.5, rBottom - len * Math.sin(incl));
-      const ySupTop = yT + 2;   // top of glass stem (filament support pins)
 
       // ---- Envelope ----
       // Overall height (left)
@@ -631,17 +630,37 @@
       hDimension(yTip - 8, neckR, BASE_TOP - 2, `⌀${params.neckDiameter.toFixed(1)} mm`, -3);
 
       // ---- Vertical gaps (right, referenced to the central axis) ----
+      // Three-segment chain matching the supplier's reference points:
+      // start-of-stem → filament bottom → filament top → top of bulb (sums to glass height).
       const xCh = (rBottom + rTop) / 2 + params.filamentBow + 9;
-      // bottom of stem / top of metal screw  →  bottom of filament
+      // E26 metal screw height: contact tip → start of plastic neck collar
+      const screwTop = BASE_TOP - 3;
+      vDimension(xCh, 0, yTip, 0, screwTop, `${(screwTop - yTip).toFixed(1)} mm`, 3);
+      // start of stem / top of metal screw  →  bottom of filament
       vDimension(xCh, 0, BASE_TOP, 0, yB, `${(yB - BASE_TOP).toFixed(1)} mm`, 3);
-      // top of stem  →  top of bulb
-      vDimension(xCh, 0, ySupTop, 0, glassTopY, `${(glassTopY - ySupTop).toFixed(1)} mm`, 3);
+      // top of filament  →  top of bulb
+      vDimension(xCh, 0, yT, 0, glassTopY, `${(glassTopY - yT).toFixed(1)} mm`, 3);
+      // bottom of filament → top of filament (VERTICAL height) — on the LEFT, opposite
+      // the inclined-path dimension which sits on the right (+x) filament.
+      const xChL = -((rBottom + rTop) / 2 + params.filamentBow + 16);
+      vDimension(xChL, 0, yB, 0, yT, `${(yT - yB).toFixed(1)} mm`, -3);
+      // Combined chain: start of stem → top of bulb (= sum of the three segments,
+      // supplier's 77.5 mm). Bracketed outboard of the right-hand chain.
+      vDimension(xCh + 11, 0, BASE_TOP, 0, glassTopY,
+        `${(glassTopY - BASE_TOP).toFixed(1)} mm`, 3);
 
       // ---- Filament length (aligned ALONG the inclined filament) ----
+      // Report the TRUE 3D path length of the bowed filament curve, not the straight
+      // chord — this is the "on incline" length (≈ the 38.4 mm "4×38mm" spec when bowed).
       const pA = V(rBottom, yB, 0), pB = V(rTop, yT, 0);
+      const midR = (rBottom + rTop) / 2 + params.filamentBow;
+      const fcurve = new THREE.CatmullRomCurve3([
+        pA.clone(), V(midR, (yB + yT) / 2, 0), pB.clone(),
+      ]);
+      const arcLen = fcurve.getLength();
       const fd = pB.clone().sub(pA).normalize();
       const fperp = V(fd.y, -fd.x, 0).normalize();   // perpendicular, pointing outward (+x)
-      alignedDimension(pA, pB, fperp, 6, `${len.toFixed(1)} mm`);
+      alignedDimension(pA, pB, fperp, 6, `${arcLen.toFixed(1)} mm`);
 
       // ---- Filament incline angle (on the left filament, at its base) ----
       const P0 = V(-rBottom, yB, 0);
